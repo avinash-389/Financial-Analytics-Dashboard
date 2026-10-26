@@ -1,0 +1,273 @@
+FINANCIAL ANALYTICS DASHBOARD — DAX MEASURES
+================================================
+
+IMPORTANT
+---------
+These examples assume the tables are named CustomerSnapshot, MonthlyData, and
+CustomerLoanBridge. Rename table/column references to match your Power BI Fields pane.
+Use CustomerSnapshot for one-row-per-customer analysis, not the repeated monthly table.
+The source has repeated monthly records, so counting rows will overstate customer totals.
+
+Recommended relationships:
+CustomerSnapshot[Customer_ID] 1 -> * MonthlyData[Customer_ID]
+CustomerSnapshot[Customer_ID] 1 -> * CustomerLoanBridge[Customer_ID]
+
+1. CORE KPI CARDS
+-----------------
+
+Total Customers =
+DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] )
+
+Average Annual Income =
+AVERAGE ( CustomerSnapshot[Annual_Income] )
+
+Average Monthly Balance =
+AVERAGE ( CustomerSnapshot[Monthly_Balance] )
+
+Average Payment Delay (Days) =
+AVERAGE ( CustomerSnapshot[Delay_from_due_date] )
+
+Average Credit Utilisation =
+AVERAGE ( CustomerSnapshot[Credit_Utilization_Ratio] )
+
+Average Credit Limit =
+AVERAGE ( CustomerSnapshot[Credit_Limit] )
+
+Average Credit Score =
+AVERAGE ( CustomerSnapshot[Credit_Score_Numeric] )
+
+Average Number of Loans =
+AVERAGE ( CustomerSnapshot[Num_of_Loan] )
+
+Average Number of Credit Cards =
+AVERAGE ( CustomerSnapshot[Num_Credit_Card] )
+
+2. AGE GROUP (CALCULATED COLUMN)
+--------------------------------
+Create this using Modeling > New column, not New measure.
+
+Age Group =
+SWITCH (
+    TRUE (),
+    ISBLANK ( CustomerSnapshot[Age] ), "Unclassified",
+    CustomerSnapshot[Age] >= 14 && CustomerSnapshot[Age] <= 18, "Teen (14–18)",
+    CustomerSnapshot[Age] >= 19 && CustomerSnapshot[Age] <= 24, "Young Adult (19–24)",
+    CustomerSnapshot[Age] >= 25 && CustomerSnapshot[Age] <= 34, "Old Adult (25–34)",
+    CustomerSnapshot[Age] >= 35 && CustomerSnapshot[Age] <= 45, "Old1 (35–45)",
+    CustomerSnapshot[Age] >= 46, "Old2 (46+)",
+    "Unclassified"
+)
+
+Customer Count by Age Group =
+DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] )
+
+Average Age =
+AVERAGE ( CustomerSnapshot[Age] )
+
+3. CREDIT LIMIT CHANGES VS AGE
+------------------------------
+
+Average Credit Limit Change =
+AVERAGE ( CustomerSnapshot[Changed_Credit_Limit] )
+
+Customers with Credit Limit Increase =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    FILTER ( CustomerSnapshot, CustomerSnapshot[Changed_Credit_Limit] > 0 )
+)
+
+Customers with Credit Limit Decrease =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    FILTER ( CustomerSnapshot, CustomerSnapshot[Changed_Credit_Limit] < 0 )
+)
+
+Customers with No Credit Limit Change =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    FILTER ( CustomerSnapshot, CustomerSnapshot[Changed_Credit_Limit] = 0 )
+)
+
+Use Age or Age Group on the X-axis and Average Credit Limit Change on the Y-axis.
+For a scatter chart, use Age as X, Changed_Credit_Limit as Y, and Customer_ID as Details.
+
+4. CREDIT SCORE BY AGE GROUP
+----------------------------
+
+Good Credit Score Customers =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    CustomerSnapshot[Credit_Score] = "Good"
+)
+
+Standard Credit Score Customers =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    CustomerSnapshot[Credit_Score] = "Standard"
+)
+
+Poor Credit Score Customers =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    CustomerSnapshot[Credit_Score] = "Poor"
+)
+
+Bad Credit Score Customers =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    CustomerSnapshot[Credit_Score] = "Bad"
+)
+
+For the stacked column chart, use Age Group as the axis, Credit_Score as the legend,
+and Customer Count by Age Group as the value. This lets the chart respond to filters.
+
+5. CREDIT MIX VS PAYMENT BEHAVIOUR
+----------------------------------
+
+Customers by Credit Mix =
+DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] )
+
+Use Credit_Mix as the axis, Payment_of_Min_Amount as the legend, and Customers by
+Credit Mix as the value. Decide whether "NM" means unknown/missing or a real category;
+do not silently treat it as "No".
+
+6. LOAN-POTENTIAL SEGMENT (ILLUSTRATIVE RULE)
+---------------------------------------------
+
+Potential Loan Customers =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    FILTER (
+        CustomerSnapshot,
+        CustomerSnapshot[Credit_Score] = "Good"
+            && CustomerSnapshot[Payment_of_Min_Amount] = "Yes"
+            && CustomerSnapshot[Num_Credit_Inquiries] <= 7.5
+    )
+)
+
+Potential Loan Customer Share =
+DIVIDE ( [Potential Loan Customers], [Total Customers], 0 )
+
+This is only an example segment for analysis, not a credit approval rule. Confirm
+criteria with the business before making real lending decisions.
+
+7. CREDIT INQUIRIES — THRESHOLD ABOVE 7.5
+-----------------------------------------
+
+Average Credit Inquiries =
+AVERAGE ( CustomerSnapshot[Num_Credit_Inquiries] )
+
+High Inquiry Customers =
+CALCULATE (
+    DISTINCTCOUNT ( CustomerSnapshot[Customer_ID] ),
+    FILTER ( CustomerSnapshot, CustomerSnapshot[Num_Credit_Inquiries] > 7.5 )
+)
+
+High Inquiry Customer Share =
+DIVIDE ( [High Inquiry Customers], [Total Customers], 0 )
+
+Inquiry Threshold Status =
+IF (
+    AVERAGE ( CustomerSnapshot[Num_Credit_Inquiries] ) > 7.5,
+    "Above 7.5 threshold",
+    "At or below 7.5 threshold"
+)
+
+8. LTV SCORE AND PROMOTION
+--------------------------
+
+Credit Score Numeric (CALCULATED COLUMN) =
+SWITCH (
+    CustomerSnapshot[Credit_Score],
+    "Good", 3,
+    "Standard", 1.5,
+    "Poor", 0,
+    "Bad", 0,
+    BLANK ()
+)
+
+The problem brief specifies Good = 3 and Poor/Bad = 0 but does not define Standard.
+The 1.5 mapping is an assumption; confirm it before publishing.
+
+LTV Score (CALCULATED COLUMN) =
+DIVIDE (
+    CustomerSnapshot[Annual_Income] * CustomerSnapshot[Credit_Score_Numeric],
+    1 + CustomerSnapshot[Delay_from_due_date]
+)
+    + CustomerSnapshot[Amount_invested]
+    + CustomerSnapshot[Monthly_Balance]
+
+This is a proposed interpretation of the project formula: (annual income × numeric credit
+score) / (1 + average days delayed) + amount invested + monthly balance. Confirm the exact
+formula and consistent currency units against the original problem statement.
+
+Average LTV Score =
+AVERAGE ( CustomerSnapshot[LTV_Score] )
+
+LTV Promotion Status =
+IF (
+    [Average LTV Score] >= 50000,
+    "Eligible for promotion review",
+    "No promotion triggered"
+)
+
+No specific promotion was supplied in the brief, so this measure only reports whether
+the threshold is met; it does not promise a discount or offer.
+
+9. AVERAGE LOANS AND CREDIT CARDS BY AGE
+----------------------------------------
+
+Average Loans per Customer =
+AVERAGE ( CustomerSnapshot[Num_of_Loan] )
+
+Average Credit Cards per Customer =
+AVERAGE ( CustomerSnapshot[Num_Credit_Card] )
+
+Use Age Group as the axis and both measures as values in a clustered column chart or
+line-and-clustered-column chart.
+
+10. LOAN TYPE POPULARITY
+------------------------
+
+Customers by Loan Type =
+DISTINCTCOUNT ( CustomerLoanBridge[Customer_ID] )
+
+Use CustomerLoanBridge[Loan_Type] as the axis and Customers by Loan Type as the value.
+The bridge should have one row per customer-loan-type combination. Counting monthly
+records instead can inflate popularity counts.
+
+11. OPTIONAL MONTHLY TRENDS
+---------------------------
+
+Monthly Average Balance =
+AVERAGE ( MonthlyData[Monthly_Balance] )
+
+Monthly Average Payment Delay =
+AVERAGE ( MonthlyData[Delay_from_due_date] )
+
+Monthly Average Credit Utilisation =
+AVERAGE ( MonthlyData[Credit_Utilization_Ratio] )
+
+Use MonthlyData[Month] on the X-axis. If Month is text, create a month number/date column
+and sort by it; otherwise months may appear alphabetically.
+
+12. FORMATTING
+--------------
+
+- Annual income, monthly balance, credit limit, and LTV: Currency (₹), after confirming
+  the dataset's currency and units.
+- Credit utilisation and customer shares: Percentage only if the underlying value is a
+  decimal fraction (0.356 = 35.6%). Check the raw data first.
+- Payment delay: decimal number; title/unit should say days.
+- Customer counts: whole number.
+- Average loans/cards: one or two decimal places.
+
+13. VALIDATION CHECKLIST
+------------------------
+
+- Use CustomerSnapshot for unique-customer KPIs; don't count monthly rows as customers.
+- Verify exact table and column names in the Fields pane before pasting formulas.
+- If Age_Group, Credit_Score_Numeric, or LTV_Score already exists, don't recreate it.
+- Make sure CustomerLoanBridge has one row per customer per loan type.
+- Confirm data-cleaning assumptions, outliers, missing values, credit score mapping, and
+  LTV formula before publishing.
